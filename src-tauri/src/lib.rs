@@ -35,6 +35,15 @@ const TRAY_UPDATE_ICON: &[u8] = include_bytes!("../icons/tray-update.png");
 
 const HOTKEY: &str = "alt+v";
 
+/// How often the hotkey is claimed again. macOS hands out Option+V once, at
+/// registration, and can take it back without telling anyone: after four days of
+/// uptime the app sat in the tray with a working clipboard watcher and a dead
+/// hotkey, which is the only way in (2026-07-27). The loss is not readable from
+/// inside — the plugin's `is_registered` answers from its own bookkeeping, not
+/// from the system — so the claim is simply renewed on a timer. A sleeping
+/// thread takes no power assertion, so this does not keep the Mac awake.
+const HOTKEY_RENEWAL_SECS: u64 = 5 * 60;
+
 struct AppState {
     history: Arc<Mutex<History>>,
     /// Raised right before we write to the clipboard ourselves, so our own write
@@ -276,6 +285,27 @@ fn persist(store: &store::Store, history: &Mutex<History>) {
     }
 }
 
+/// Claims Option+V for the popup. Run at startup and renewed on a timer, so the
+/// same call has to work on a hotkey that is already ours, one the system has
+/// quietly dropped, and one whose handler is stale.
+fn claim_hotkey(app: &AppHandle) -> Result<(), String> {
+    let hotkey: Shortcut = HOTKEY.parse().map_err(|e| format!("bad hotkey: {}", e))?;
+    // Let go of the previous claim first: registering on top of a live one is
+    // refused, and a claim the system no longer honours is exactly what we came
+    // to replace. Fails harmlessly when there is nothing to release.
+    let _ = app.global_shortcut().unregister(hotkey);
+    let handle = app.clone();
+    app.global_shortcut()
+        .on_shortcut(hotkey, move |_app, _sc, event| {
+            // Fire on press only — on_shortcut also reports the release, and
+            // acting on both toggles the popup up and straight back down.
+            if event.state == ShortcutState::Pressed {
+                toggle_popup(&handle);
+            }
+        })
+        .map_err(|e| e.to_string())
+}
+
 /// Option+V: raise the popup, or put it away if it is already up.
 fn toggle_popup(app: &AppHandle) {
     if mac_window::popup_visible(app) {
@@ -413,17 +443,24 @@ pub fn run() {
             }
             mac_window::dismiss_on_outside_click(handle.clone());
 
-            // Option+V from anywhere.
-            let hotkey: Shortcut = HOTKEY.parse().map_err(|e| format!("bad hotkey: {}", e))?;
-            let hk_handle = handle.clone();
-            app.global_shortcut().on_shortcut(hotkey, move |_app, _sc, event| {
-                // Fire on press only — on_shortcut also reports the release, and
-                // acting on both toggles the popup up and straight back down.
-                if event.state == ShortcutState::Pressed {
-                    toggle_popup(&hk_handle);
+            // Option+V from anywhere, and again every few minutes: the app lives
+            // in the tray for weeks, and the claim does not always survive that
+            // long. Only a failed renewal is worth a log line — the quiet case is
+            // the app doing its job.
+            claim_hotkey(&handle)?;
+            debug_log::log(&format!(
+                "hotkey registered: {} (renewed every {}s)",
+                HOTKEY, HOTKEY_RENEWAL_SECS
+            ));
+            let renewal_handle = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(HOTKEY_RENEWAL_SECS)).await;
+                    if let Err(e) = claim_hotkey(&renewal_handle) {
+                        debug_log::log(&format!("hotkey: renewal failed: {}", e));
+                    }
                 }
-            })?;
-            debug_log::log(&format!("hotkey registered: {}", HOTKEY));
+            });
 
             // Clipboard watcher.
             let watcher_handle = handle.clone();
