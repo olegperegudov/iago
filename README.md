@@ -14,6 +14,10 @@
   <b>Everything stays local</b> — the history lives on your disk, no cloud, no telemetry
 </p>
 
+<p align="center">
+  <sub>A free, open-source alternative to <a href="https://pasteapp.io">Paste</a> — the same cards-in-a-row idea, keyboard first, no subscription.</sub>
+</p>
+
 ## Get it
 
 <p align="center">
@@ -26,7 +30,7 @@ Each button downloads the latest installer for that platform. Want an older buil
 
 Then:
 
-1. **Open it.** Apple isn't paid to trust us, so the first launch claims the app is *"damaged"*. It isn't — run `xattr -cr /Applications/Iago.app` once in Terminal, then open it normally. Updates after that install themselves.
+1. **Open it.** macOS blocks the first launch, says it cannot verify the app and offers the Trash. The file is fine — Apple vouches only for developers who pay it $99 a year, and this app is free. Press **Done**, then **System Settings → Privacy & Security**, scroll to *Security*, press **Open Anyway**. Once per app, not per version: updates after that install themselves.
 2. **Grant Accessibility** when asked (System Settings → Privacy & Security → Accessibility). Without it the app cannot paste on your behalf. Once, at install — not again after every update.
 3. **Press ⌥V.** The history is there.
 
@@ -84,3 +88,5 @@ Stack, local build, tests, signing and the release pipeline → [docs/DEVELOPMEN
 ## License
 
 MIT
+
+<sub>Iago is an independent project. It is not affiliated with, endorsed by, or derived from the code of Paste or any other clipboard manager; product names mentioned here belong to their owners.</sub>
