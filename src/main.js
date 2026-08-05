@@ -181,6 +181,16 @@ async function pick(id) {
   await invoke("pick", { id });
 }
 
+/** ⌘E on a picture. The popup goes down in Rust, the way it does for a paste,
+ *  and the picture comes back as a new card once it is saved. */
+async function edit(id) {
+  try {
+    await invoke("edit_clip", { id });
+  } catch (e) {
+    log(`edit failed: ${e}`);
+  }
+}
+
 /** ⌦ on a card. The cursor stays where it stood, so holding the key walks the
  *  history away card by card instead of jumping to the end. */
 async function drop(id) {
@@ -281,7 +291,7 @@ function moveCursor(delta) {
 
 document.addEventListener("keydown", (e) => {
   const action = keyAction(
-    { key: e.key, meta: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey },
+    { key: e.key, code: e.code, meta: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey },
     { zone: state.zone, query: state.query, hasFilter: !!state.appFilter }
   );
   if (!action) return;
@@ -301,6 +311,13 @@ document.addEventListener("keydown", (e) => {
       // With an index it is a digit shortcut, without one it is the selected card.
       const clip = cards()[action.index ?? state.cardIdx];
       if (clip) pick(clip.id);
+      return;
+    }
+    case "edit": {
+      // Only a picture has anything to draw on. On a text card the key does
+      // nothing at all rather than opening a text file the user did not ask for.
+      const clip = cards()[state.cardIdx];
+      if (clip?.kind === "image") edit(clip.id);
       return;
     }
     case "deleteCard": {

@@ -167,3 +167,15 @@ pub fn screenshot_source() -> SourceApp {
         icon: String::new(),
     }
 }
+
+/// The name shown on a picture that came back from the editor. Synthetic for the
+/// same reason: the editor that happened to be frontmost when the file landed is
+/// a guess, and it goes wrong the moment the user switches away while it saves.
+/// A bucket of its own also means the app row can filter down to just the edits.
+pub fn edited_source() -> SourceApp {
+    SourceApp {
+        name: "Edited".into(),
+        bundle: "system.edited".into(),
+        icon: String::new(),
+    }
+}

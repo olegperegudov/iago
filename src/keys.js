@@ -7,12 +7,12 @@
 // card — the deleting key is ⌦.
 
 /**
- * @param {{key: string, meta?: boolean, ctrl?: boolean, alt?: boolean}} press
+ * @param {{key: string, code?: string, meta?: boolean, ctrl?: boolean, alt?: boolean}} press
  * @param {{zone: string, query: string, hasFilter: boolean}} state
  * @returns {object|null} the action, or null when the popup has no business with it
  */
 export function keyAction(press, state) {
-  const { key, meta, ctrl, alt } = press;
+  const { key, code, meta, ctrl, alt } = press;
   const { zone, query, hasFilter } = state;
 
   // ⌘⌫ is how a Mac deletes the thing you are looking at — Finder, Mail, every
@@ -20,6 +20,13 @@ export function keyAction(press, state) {
   // not a one-handed gesture.
   if (meta && key === "Backspace") {
     return zone === "cards" ? { type: "deleteCard" } : null;
+  }
+  // ⌘E opens a picture in the Mac's markup tools, the way ⌘E is "edit" in every
+  // other program. Matched on the *physical* key, not the letter it prints: on a
+  // Russian layout that key prints "у", and a rule written against the letter is
+  // a rule that quietly stops working when the layout changes.
+  if (meta && code === "KeyE") {
+    return zone === "cards" ? { type: "edit" } : null;
   }
   // Every other Cmd/Ctrl combination belongs to the system, not to us.
   if (meta || ctrl) return null;

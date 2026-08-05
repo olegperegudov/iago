@@ -84,6 +84,24 @@ describe("backspace erases, delete deletes", () => {
   });
 });
 
+describe("⌘E hands the picture to the markup tools", () => {
+  it("opens the selected card", () => {
+    expect(keyAction(press("e", { code: "KeyE", meta: true }), at())).toEqual({ type: "edit" });
+  });
+
+  it("works on a Russian layout, where that key prints 'у'", () => {
+    expect(keyAction(press("у", { code: "KeyE", meta: true }), at())).toEqual({ type: "edit" });
+  });
+
+  it("does nothing on the app row, where no card is selected", () => {
+    expect(keyAction(press("e", { code: "KeyE", meta: true }), at({ zone: "apps" }))).toBeNull();
+  });
+
+  it("plain E is still a letter for the search", () => {
+    expect(keyAction(press("e", { code: "KeyE" }), at())).toEqual({ type: "type", char: "e" });
+  });
+});
+
 describe("navigation is only ever between the cards and the icons", () => {
   it("goes up out of the cards", () => {
     expect(keyAction(press("ArrowUp"), at())).toEqual({ type: "zone", delta: -1 });

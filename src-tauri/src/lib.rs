@@ -8,7 +8,9 @@
 
 mod clipboard;
 mod debug_log;
+mod edit;
 mod history;
+mod intake;
 mod mac_window;
 mod paste;
 mod private;
@@ -51,6 +53,9 @@ struct AppState {
     skip_next: Arc<Mutex<bool>>,
     /// The app that was frontmost when the popup opened — where the paste goes.
     target_pid: Mutex<Option<i32>>,
+    /// What the edit folder already holds, so a copy handed to the editor does
+    /// not come straight back as an edit — see edit.rs.
+    edit_known: Arc<edit::Known>,
 }
 
 #[tauri::command]
@@ -163,6 +168,25 @@ fn pick(app: AppHandle, state: tauri::State<AppState>, id: u64) -> Result<(), St
     // in the app underneath.
     mac_window::hide_popup(&app);
     paste::paste(&payload, &state.skip_next, target)
+}
+
+/// ⌘E on a picture card: hand a copy of it to the Mac's markup tools. Whatever
+/// is saved there comes back as a new clip, so the original keeps its own card —
+/// see edit.rs.
+#[tauri::command]
+fn edit_clip(app: AppHandle, state: tauri::State<AppState>, id: u64) -> Result<(), String> {
+    let png = {
+        let h = state.history.lock().map_err(|e| e.to_string())?;
+        match &h.get(id).ok_or_else(|| format!("clip {} is gone", id))?.payload {
+            history::Payload::Image { png, .. } => png.clone(),
+            history::Payload::Text(_) => return Err(format!("clip {} is not a picture", id)),
+        }
+    };
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    // Down first, as a paste would: the editor's window has to come up over the
+    // app the user was in, not underneath our panel.
+    mac_window::hide_popup(&app);
+    edit::open(&data_dir, id, &png, &state.edit_known)
 }
 
 /// ⌦ on a card. The clip leaves the history and, if it was an image, its file
@@ -372,6 +396,7 @@ pub fn run() {
 
     let history = Arc::new(Mutex::new(History::new()));
     let skip_next = Arc::new(Mutex::new(false));
+    let edit_known: Arc<edit::Known> = Arc::new(Mutex::new(std::collections::VecDeque::new()));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -381,10 +406,12 @@ pub fn run() {
             history: Arc::clone(&history),
             skip_next: Arc::clone(&skip_next),
             target_pid: Mutex::new(None),
+            edit_known: Arc::clone(&edit_known),
         })
         .invoke_handler(tauri::generate_handler![
             get_history,
             pick,
+            edit_clip,
             delete_clip,
             close_popup,
             get_version,
@@ -424,7 +451,7 @@ pub fn run() {
                     ));
                 }
             }
-            app.manage(SettingsState { current: Arc::clone(&current), dir: data_dir });
+            app.manage(SettingsState { current: Arc::clone(&current), dir: data_dir.clone() });
             // delete_clip writes the index out on the spot, so the store has to be
             // reachable from a command, not just from the watcher threads.
             app.manage(Arc::clone(&store));
@@ -494,6 +521,25 @@ pub fn run() {
                     screenshot::watch(shot_history, shot_skip, || {
                         persist(&shot_store, &saved_history);
                         let _ = shot_handle.emit("history-changed", ());
+                    });
+                });
+            }
+
+            // Edit watcher: a picture saved in the editor comes back as a new
+            // clip, leaving the one it was made from on its own card.
+            {
+                let edit_dir = edit::dir(&data_dir);
+                edit::sweep(&edit_dir);
+                let edit_handle = handle.clone();
+                let edit_history = Arc::clone(&history);
+                let edit_skip = Arc::clone(&skip_next);
+                let edit_store = Arc::clone(&store);
+                let saved_history = Arc::clone(&history);
+                let known = Arc::clone(&edit_known);
+                std::thread::spawn(move || {
+                    edit::watch(edit_dir, edit_history, edit_skip, known, || {
+                        persist(&edit_store, &saved_history);
+                        let _ = edit_handle.emit("history-changed", ());
                     });
                 });
             }

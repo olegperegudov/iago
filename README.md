@@ -64,6 +64,10 @@ Up and down between the cards and the icons, left and right inside them. The ful
 
 While macOS hangs that little thumbnail in the corner, the screenshot is not on disk yet — so pasting it right away pastes the *previous* clip. Tick **"Screenshot straight to clipboard"** in the menu bar: the file lands at once, Iago catches it, `⌘V` pastes the picture.
 
+## Draw on a screenshot without leaving the keyboard
+
+Stand on a picture and press `⌘E`. It opens in Preview with the markup tools — arrows, boxes, text, crop. Save, and the marked-up version is the newest card and already on the clipboard, with the untouched original still sitting right behind it.
+
 ## Settings
 
 Click the parrot in the menu bar → **Settings**. How long clips are kept (a day, a week, a month, or no limit — a week by default), whether a screenshot lands on the clipboard at once, and how large the interface is drawn.
