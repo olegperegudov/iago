@@ -20,6 +20,12 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Two folders arrive as *files* rather than as clipboard events: the one macOS
+# drops screenshots into, and the one a picture comes back from after the user
+# has drawn on it. Watching them with FS events (not a 1s poll) is what makes
+# both land in the history instantly. Both platforms — the edit folder is
+# watched on Windows too.
+notify = "7"
 # Reads/writes clipboard text and images on both platforms. Change *detection*
 # stays platform-native (see clipboard.rs) — arboard has no cheap "did it
 # change" call, and decoding every image twice a second to find out is absurd.
@@ -44,9 +50,6 @@ core-foundation = "0.10"
 # NSEvent's global monitor takes an Objective-C block and nothing else — that is
 # how we notice a click landing anywhere outside the popup.
 block = "0.1"
-# Screenshots land as *files*, not on the clipboard. Watching the folder with
-# FS events (not a 1s poll) is what makes a fresh screenshot show up instantly.
-notify = "7"
 # Turns the borderless window into a non-activating NSPanel: it takes keystrokes
 # without activating Iago, so the app underneath keeps its focus and the
 # synthetic Cmd+V lands where the user was typing. Same mechanism Spotlight uses.
