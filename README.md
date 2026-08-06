@@ -56,7 +56,7 @@ There is nowhere to go to search: type from wherever you are standing and the qu
 
 ## Hands stay on the keyboard
 
-Up and down between the cards and the icons, left and right inside them. The full sheet lives in the menu-bar menu.
+Up and down between the cards and the icons, left and right inside them. The full sheet is one click on the parrot away.
 
 ![The shortcuts sheet](docs/screenshots/shortcuts.png)
 
@@ -68,15 +68,17 @@ While macOS hangs that little thumbnail in the corner, the screenshot is not on 
 
 Stand on a picture and press `⌘E`. It opens in Preview with the markup tools — arrows, boxes, text, crop. Save, and the marked-up version is the newest card and already on the clipboard, with the untouched original still sitting right behind it. The working copy passes through an **Iago** folder in your Downloads and is cleared out a day later.
 
-## Settings
+## The parrot in the menu bar
 
-Click the parrot in the menu bar → **Settings**. How long clips are kept (a day, a week, a month, or no limit — a week by default), whether a screenshot lands on the clipboard at once, and how large the interface is drawn.
+**Click it** and the panel drops down: how long clips are kept (a day, a week, a month, or no limit — a week by default), whether a screenshot lands on the clipboard at once, how large the interface is drawn — and, on the other side of the same panel, the shortcuts sheet. `⌘1` and `⌘2` reach the two sides, `esc` puts the panel away.
 
 ![Settings](docs/screenshots/settings.png)
 
+**Right-click it** for the short menu: the update, the version you are on, and quit.
+
 ## Updates
 
-The parrot in the menu bar turns green when a new version is out. Click it, pick the update line — done.
+The parrot turns green when a new version is out. Right-click it, pick the update line — done.
 
 ## Privacy
 

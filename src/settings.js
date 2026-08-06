@@ -1,14 +1,12 @@
-// The settings sheet: what the user chose, nothing the app can work out itself.
+// The settings side of the panel: what the user chose, nothing the app can work
+// out itself.
 //
 // Retention is the important one. A clipboard history with no expiry is a
 // transcript of everything you ever copied, so the app asks how long you want to
 // keep it — and shortening the window deletes what already fell outside it,
 // immediately, not at some later sweep.
 
-import { applyScale } from "./scale.js";
-
 const { invoke } = window.__TAURI__.core;
-const { getCurrentWindow } = window.__TAURI__.window;
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -43,9 +41,9 @@ function renderRetention(choices, chosen) {
   }
 }
 
-// This window opens at the saved scale; the sample line nets the *target* scale
-// on top of that, so a drag previews the new size without resizing the window
-// under the cursor. The popup and the cheat sheet take the change on next open.
+// The panel opens at the saved scale; the sample line nets the *target* scale on
+// top of that, so a drag previews the new size without resizing the panel under
+// the cursor. The popup takes the change on next open.
 let openedScale = 1;
 
 function reflectScale(target) {
@@ -76,25 +74,19 @@ function renderScale(cfg) {
   });
 }
 
-async function load() {
-  const cfg = await invoke("get_settings");
-  applyScale(cfg.ui_scale);
+/// Takes the settings the panel already fetched: one round trip for the whole
+/// panel, not one per side.
+export function mountSettings(cfg) {
   renderRetention(cfg.retention_choices, cfg.retention_days);
   $("#instant").checked = cfg.instant_screenshots;
   renderScale(cfg);
+
+  $("#instant").addEventListener("change", async (e) => {
+    try {
+      await invoke("set_instant_screenshots", { on: e.target.checked });
+    } catch (err) {
+      e.target.checked = !e.target.checked;
+      say(`Couldn't change it: ${err}`);
+    }
+  });
 }
-
-$("#instant").addEventListener("change", async (e) => {
-  try {
-    await invoke("set_instant_screenshots", { on: e.target.checked });
-  } catch (err) {
-    e.target.checked = !e.target.checked;
-    say(`Couldn't change it: ${err}`);
-  }
-});
-
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") getCurrentWindow().hide();
-});
-
-load();

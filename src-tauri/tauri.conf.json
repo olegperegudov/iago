@@ -25,26 +25,17 @@
         "shadow": false
       },
       {
-        "label": "shortcuts",
-        "title": "Shortcuts",
-        "url": "shortcuts.html",
+        "label": "panel",
+        "title": "Iago",
+        "url": "panel.html",
         "width": 420,
-        "height": 510,
+        "height": 484,
         "resizable": false,
-        "center": true,
+        "center": false,
         "visible": false,
-        "skipTaskbar": true
-      },
-      {
-        "label": "settings",
-        "title": "Settings",
-        "url": "settings.html",
-        "width": 420,
-        "height": 430,
-        "resizable": false,
-        "center": true,
-        "visible": false,
-        "skipTaskbar": true
+        "skipTaskbar": true,
+        "decorations": false,
+        "transparent": true
       }
     ],
     "security": {

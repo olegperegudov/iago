@@ -313,17 +313,46 @@ mark.hit {
   border-radius: 12px;
 }
 
-/* --- shortcuts window ---
-   An ordinary window with a system title bar: it closes with the cross, with
-   Cmd+W, with Esc, and it does not hover over everything else. The popup is the
-   only thing here that has any business floating. */
+/* --- the menu-bar panel ---
+   Hangs under the tray icon, borderless: a rounded card on a transparent window,
+   the same trick the popup's zones use. The window itself carries no background,
+   so the corners outside the radius show what is behind them instead of a square
+   of grey. */
 body.sheet {
-  padding: 18px;
+  padding: 0;
+  background: transparent;
+  height: 100%;
+}
+.panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+/* The row that swaps the sides. Deliberately the same segmented control the
+   retention choice uses — the app already speaks it, so there is nothing new to
+   learn at the top of the panel. */
+.switch {
+  padding: 12px 14px 0;
+  flex: 0 0 auto;
+}
+.pane {
+  flex: 1;
+  min-height: 0;
+  padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  background: var(--glass);
-  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+.pane[hidden] {
+  display: none;
 }
 .zone {
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -415,10 +444,17 @@ kbd {
   background: var(--glass-fill);
   color: var(--ink);
 }
-.choice.chosen {
+/* Two states, one look: `chosen` for a saved choice, `aria-selected` for the
+   side the panel is showing. */
+.choice.chosen,
+.choice[aria-selected="true"] {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--ink);
+}
+.choice:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(57, 192, 179, 0.55);
 }
 .switch-row {
   display: flex;

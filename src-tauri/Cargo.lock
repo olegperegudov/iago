@@ -1567,7 +1567,7 @@ dependencies = [
 
 [[package]]
 name = "iago"
-version = "0.1.35"
+version = "0.1.36"
 dependencies = [
  "arboard",
  "base64 0.22.1",

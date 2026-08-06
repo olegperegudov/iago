@@ -18,16 +18,13 @@ mod settings;
 #[cfg(target_os = "macos")]
 mod screenshot;
 mod source_app;
+mod tray;
 mod store;
 
 use history::History;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tauri::{
-    menu::{MenuBuilder, MenuItem},
-    tray::TrayIconBuilder,
-    AppHandle, Emitter, Manager,
-};
+use tauri::{menu::MenuItem, AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tauri_plugin_updater::UpdaterExt;
 
@@ -356,39 +353,9 @@ fn toggle_popup(app: &AppHandle) {
     mac_window::show_popup(app);
 }
 
-/// The windows the tray menu opens. They are hidden on close, never destroyed,
-/// so the same window answers every time the menu item is pressed.
-const TRAY_WINDOWS: [&str; 2] = ["settings", "shortcuts"];
-
-/// The size each sheet is authored at, mirroring tauri.conf.json. The interface
-/// scale grows the window from here so the zoomed content is not clipped by a
-/// window that stayed at 1×.
-fn sheet_base_size(label: &str) -> Option<(f64, f64)> {
-    match label {
-        "settings" => Some((420.0, 430.0)),
-        "shortcuts" => Some((420.0, 510.0)),
-        _ => None,
-    }
-}
-
-fn show_window(app: &AppHandle, label: &str) {
-    match app.get_webview_window(label) {
-        Some(w) => {
-            if let Some((bw, bh)) = sheet_base_size(label) {
-                let scale = app
-                    .try_state::<SettingsState>()
-                    .and_then(|c| c.current.lock().ok().map(|s| s.ui_scale))
-                    .unwrap_or(settings::DEFAULT_UI_SCALE) as f64;
-                let _ = w.set_size(tauri::LogicalSize::new(bw * scale, bh * scale));
-            }
-            let _ = w.show();
-            let _ = w.set_focus();
-        }
-        // A destroyed window silently does nothing when its menu item is pressed,
-        // which reads to the user as a dead menu. Say so in the log.
-        None => debug_log::log(&format!("tray: window '{}' is gone, cannot show it", label)),
-    }
-}
+/// The panel is hidden on close, never destroyed: a destroyed window cannot be
+/// shown again, and the tray icon would then open nothing.
+const TRAY_WINDOWS: [&str; 1] = [tray::PANEL];
 
 pub fn run() {
     debug_log::init();
@@ -460,11 +427,16 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            build_tray(app)?;
+            tray::build(app)?;
 
             if let Some(window) = app.get_webview_window("main") {
                 if let Err(e) = mac_window::setup_panel(&window) {
                     debug_log::log(&format!("panel setup failed: {}", e));
+                }
+            }
+            if let Some(window) = app.get_webview_window(tray::PANEL) {
+                if let Err(e) = mac_window::setup_popover(&window) {
+                    debug_log::log(&format!("settings panel setup failed: {}", e));
                 }
             }
             mac_window::dismiss_on_outside_click(handle.clone());
@@ -592,8 +564,14 @@ pub fn run() {
             // Windows counterpart of the outside-click monitor: there the popup is
             // an ordinary window, so a click on another one takes its focus away.
             #[cfg(not(target_os = "macos"))]
-            if window.label() == "main" {
+            if window.label() == "main" || window.label() == tray::PANEL {
                 if let tauri::WindowEvent::Focused(false) = event {
+                    // Noted before hiding: the click that took the focus may be
+                    // the one on the tray icon, and that click has to read as
+                    // "close" rather than "close and open again".
+                    if window.label() == tray::PANEL {
+                        tray::note_auto_hide();
+                    }
                     let _ = window.hide();
                 }
             }
@@ -602,61 +580,10 @@ pub fn run() {
         .expect("error while running Iago");
 }
 
-/// Menu-bar menu. Mirrors Ribbit/Quill: update first, then the utilities, then
-/// the version, then quit.
-fn build_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let update = MenuItem::with_id(app, "update", "Check for updates", true, None::<&str>)?;
-    let settings_item = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
-    let shortcuts = MenuItem::with_id(app, "shortcuts", "Shortcuts", true, None::<&str>)?;
-    let version = MenuItem::with_id(
-        app,
-        "version",
-        format!("Iago v{}", env!("CARGO_PKG_VERSION")),
-        false,
-        None::<&str>,
-    )?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Iago", true, None::<&str>)?;
-
-    let menu = MenuBuilder::new(app)
-        .item(&update)
-        .separator()
-        .item(&settings_item)
-        .item(&shortcuts)
-        .separator()
-        .item(&version)
-        .item(&quit)
-        .build()?;
-
-    // announce_update() rewrites this item's text when a release lands.
-    app.manage(update.clone());
-
-    let mut tray = TrayIconBuilder::with_id("main")
-        .tooltip("Iago — clipboard history (⌥V)")
-        .menu(&menu)
-        .show_menu_on_left_click(true)
-        .on_menu_event(move |app, event| match event.id().as_ref() {
-            "update" => {
-                let app = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    on_update_clicked(app).await;
-                });
-            }
-            "settings" => show_window(app, "settings"),
-            "shortcuts" => show_window(app, "shortcuts"),
-            "quit" => app.exit(0),
-            _ => {}
-        });
-    if let Some(icon) = app.default_window_icon() {
-        tray = tray.icon(icon.clone());
-    }
-    tray.build(app)?;
-    Ok(())
-}
-
 /// One menu item, two jobs: check when nothing is pending, install once a
 /// version has been found. Two items would leave a dead "Check" sitting next to
 /// a live "Update".
-async fn on_update_clicked(app: AppHandle) {
+pub(crate) async fn on_update_clicked(app: AppHandle) {
     match check_for_update(app.clone()).await {
         Ok(v) if v["available"] == serde_json::Value::Bool(true) => {
             if let Err(e) = install_update(app).await {
