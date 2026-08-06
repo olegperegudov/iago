@@ -2,18 +2,30 @@
 //!
 //! The clip's own file under `img/` is never the one that opens: the history
 //! owns it, and an editor saving over it would rewrite a card that is still on
-//! screen. A copy goes into `edit/`, the editor opens the copy, and every save
+//! screen. A copy goes out instead, the editor opens the copy, and every save
 //! there comes back as a *new* clip — so the original stays as the card below
 //! the edited one, which is the whole point of editing from a clipboard history.
+//!
+//! Where the copy goes is not a matter of taste. Preview is sandboxed, and the
+//! only folder it may write into without the user picking the file in a save
+//! panel is Downloads (`com.apple.security.files.downloads.read-write`). Handing
+//! it a file anywhere else — Application Support, where this used to live — opens
+//! and draws fine and then swallows the save: no error, no prompt on close, and
+//! the file on disk byte-for-byte what we wrote (2026-08-06). So the copies live
+//! in a folder of ours inside Downloads, and are swept from there.
 
 use crate::history::History;
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-/// Where the copies go, under the app's own data directory (0700, like the rest
-/// of what Iago writes).
-const EDIT_DIR: &str = "edit";
+/// Our folder inside Downloads. A folder rather than loose files in Downloads
+/// itself: the watcher would otherwise wake on every download the user makes.
+const EDIT_DIR: &str = "Iago";
+
+/// Prefix on every copy we write. The folder is the user's, in the open, and
+/// anything they drop in it is theirs — the sweep only ever touches ours.
+const EDIT_PREFIX: &str = "iago-";
 
 /// macOS ships the markup tools — arrows, shapes, text, redaction, crop — inside
 /// Preview, so that is what a picture is handed to. Not "whatever opens PNGs":
@@ -45,17 +57,19 @@ pub type Known = Mutex<VecDeque<u64>>;
 /// run of saves; beyond that there is nothing left to recognise.
 const KNOWN_MAX: usize = 16;
 
-pub fn dir(data_dir: &Path) -> PathBuf {
-    data_dir.join(EDIT_DIR)
+/// `None` when the OS will not tell us where Downloads is — editing is off
+/// rather than quietly writing somewhere the editor cannot save.
+pub fn dir() -> Option<PathBuf> {
+    dirs::download_dir().map(|d| d.join(EDIT_DIR))
 }
 
 /// Hand a copy of a clip to the editor. The id names the file, so editing the
 /// same clip twice reuses the document the editor already has open instead of
 /// littering the folder with near-identical copies.
-pub fn open(data_dir: &Path, id: u64, png: &[u8], known: &Known) -> Result<(), String> {
-    let dir = dir(data_dir);
+pub fn open(id: u64, png: &[u8], known: &Known) -> Result<(), String> {
+    let dir = dir().ok_or("no Downloads folder to put the picture in")?;
     crate::private::create_dir(&dir).map_err(|e| format!("cannot create {}: {}", dir.display(), e))?;
-    let path = dir.join(format!("{}.png", id));
+    let path = dir.join(format!("{}{}.png", EDIT_PREFIX, id));
     // Remembered before it is written, not after: the watcher is already running,
     // and the only thing keeping it from filing our own copy as an edit would be
     // the fraction of a second it spends waiting for the write to settle. Saying
@@ -138,7 +152,7 @@ pub fn watch<F: Fn()>(
             continue;
         }
         for path in event.paths {
-            if !crate::intake::is_png(&path) {
+            if !crate::intake::is_png(&path) || !ours(&path) {
                 continue;
             }
             let bytes = match crate::intake::read_when_complete(&path) {
@@ -166,8 +180,12 @@ pub fn watch<F: Fn()>(
     }
 }
 
-/// Drops copies older than a day. Called at startup: the folder only grows while
-/// the app runs, and the app runs for weeks.
+/// Drops our copies older than a day. Called at startup: the folder only grows
+/// while the app runs, and the app runs for weeks.
+///
+/// The folder sits in the user's Downloads, so anything in it that we did not
+/// write is theirs and is never touched — hence the name check before the age
+/// check, not after.
 pub fn sweep(dir: &Path) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
@@ -176,8 +194,11 @@ pub fn sweep(dir: &Path) {
     };
     let mut swept = 0;
     for entry in entries.flatten() {
-        // A file whose age we cannot read is a file we leave alone: the folder
-        // holds the user's own pictures, and guessing here deletes them.
+        if !ours(&entry.path()) {
+            continue;
+        }
+        // A file whose age we cannot read is a file we leave alone: deleting on
+        // a guess is not something to do in a folder the user can see.
         let Ok(written) = entry.metadata().and_then(|m| m.modified()) else { continue };
         let Ok(age) = written.elapsed() else { continue };
         if age.as_secs() <= KEEP_SECS {
@@ -190,6 +211,14 @@ pub fn sweep(dir: &Path) {
     if swept > 0 {
         crate::debug_log::log(&format!("edit: {} stale copies swept", swept));
     }
+}
+
+/// A file this app put in the folder, rather than something the user dropped
+/// there — the folder is in plain sight, so both happen.
+fn ours(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.starts_with(EDIT_PREFIX) && n.to_lowercase().ends_with(".png"))
 }
 
 fn remember(known: &Known, bytes: &[u8]) {
@@ -271,7 +300,12 @@ mod tests {
         std::thread::spawn(move || watch(watched, h, s, k, || {}));
         std::thread::sleep(std::time::Duration::from_millis(300));
 
-        let path = dir.join("42.png");
+        // A picture the user happened to put in the folder is not an edit: the
+        // folder lives in their Downloads, in plain sight.
+        let theirs = dir.join("holiday.png");
+        crate::private::write(&theirs, &png(4, 4, [10, 10, 10])).unwrap();
+
+        let path = dir.join(format!("{}42.png", EDIT_PREFIX));
         let original = png(4, 4, [200, 0, 0]);
         remember(&known, &original);
         crate::private::write(&path, &original).unwrap();
@@ -279,7 +313,10 @@ mod tests {
         // wait that returns the moment the count matches would pass before the
         // watcher had even read the file.
         std::thread::sleep(std::time::Duration::from_millis(700));
-        assert_eq!(count(&history), 0, "the copy we handed the editor is not an edit");
+        assert_eq!(
+            count(&history), 0,
+            "neither the copy we handed the editor nor the user's own picture is an edit"
+        );
 
         crate::private::write(&path, &png(4, 4, [0, 200, 0])).unwrap();
         assert_eq!(wait_for(&history, 1), 1, "a save has to come back as a clip");

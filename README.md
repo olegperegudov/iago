@@ -66,7 +66,7 @@ While macOS hangs that little thumbnail in the corner, the screenshot is not on 
 
 ## Draw on a screenshot without leaving the keyboard
 
-Stand on a picture and press `⌘E`. It opens in Preview with the markup tools — arrows, boxes, text, crop. Save, and the marked-up version is the newest card and already on the clipboard, with the untouched original still sitting right behind it.
+Stand on a picture and press `⌘E`. It opens in Preview with the markup tools — arrows, boxes, text, crop. Save, and the marked-up version is the newest card and already on the clipboard, with the untouched original still sitting right behind it. The working copy passes through an **Iago** folder in your Downloads and is cleared out a day later.
 
 ## Settings
 

@@ -182,11 +182,10 @@ fn edit_clip(app: AppHandle, state: tauri::State<AppState>, id: u64) -> Result<(
             history::Payload::Text(_) => return Err(format!("clip {} is not a picture", id)),
         }
     };
-    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     // Down first, as a paste would: the editor's window has to come up over the
     // app the user was in, not underneath our panel.
     mac_window::hide_popup(&app);
-    edit::open(&data_dir, id, &png, &state.edit_known)
+    edit::open(id, &png, &state.edit_known)
 }
 
 /// ⌦ on a card. The clip leaves the history and, if it was an image, its file
@@ -451,7 +450,7 @@ pub fn run() {
                     ));
                 }
             }
-            app.manage(SettingsState { current: Arc::clone(&current), dir: data_dir.clone() });
+            app.manage(SettingsState { current: Arc::clone(&current), dir: data_dir });
             // delete_clip writes the index out on the spot, so the store has to be
             // reachable from a command, not just from the watcher threads.
             app.manage(Arc::clone(&store));
@@ -527,8 +526,7 @@ pub fn run() {
 
             // Edit watcher: a picture saved in the editor comes back as a new
             // clip, leaving the one it was made from on its own card.
-            {
-                let edit_dir = edit::dir(&data_dir);
+            if let Some(edit_dir) = edit::dir() {
                 edit::sweep(&edit_dir);
                 let edit_handle = handle.clone();
                 let edit_history = Arc::clone(&history);
