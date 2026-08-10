@@ -24,6 +24,11 @@ pub const PANEL_SIZE: (f64, f64) = (420.0, 484.0);
 /// Breathing room between the tray icon and the panel, in logical pixels.
 const TRAY_GAP: f64 = 6.0;
 
+/// The release list, opened by the version item. Not this build's own tag: the
+/// click happens when an update has been offered, and the list has that
+/// version on top and the installed one below, each with its bullets.
+const RELEASES_URL: &str = "https://github.com/olegperegudov/iago/releases";
+
 /// How long after an auto-hide a tray click still counts as "the click that
 /// hid it". Clicking the icon takes focus away from the panel, which hides it
 /// before this handler runs — without the guard the handler would then see a
@@ -132,11 +137,13 @@ pub fn toggle_panel(app: &AppHandle, rect: tauri::Rect) {
 /// not here: the left click is their way in.
 pub fn build(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let update = MenuItem::with_id(app, "update", "Check for updates", true, None::<&str>)?;
+    // The version is a way in, not a label: it opens the release list, where
+    // every build says what changed in it.
     let version = MenuItem::with_id(
         app,
         "version",
         format!("Iago v{}", env!("CARGO_PKG_VERSION")),
-        false,
+        true,
         None::<&str>,
     )?;
     let quit = MenuItem::with_id(app, "quit", "Quit Iago", true, None::<&str>)?;
@@ -176,6 +183,12 @@ pub fn build(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 tauri::async_runtime::spawn(async move {
                     crate::on_update_clicked(app).await;
                 });
+            }
+            "version" => {
+                use tauri_plugin_opener::OpenerExt;
+                if let Err(e) = app.opener().open_url(RELEASES_URL, None::<&str>) {
+                    debug_log::log(&format!("opening the release list failed: {}", e));
+                }
             }
             "quit" => app.exit(0),
             _ => {}
