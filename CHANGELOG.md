@@ -6,6 +6,15 @@ Everything indented under them is for the next engineer and stays here.
 
 ## Unreleased
 
+- A release page is a list of what changed again, not a paragraph with the
+  engineering notes glued onto the end of it.
+    - The cutter dropped indented detail only when a blank line separated it, so
+      a sub-list written flush against its parent was read as the bullet's own
+      wrapped text and shipped to the release page. A bullet now ends at the
+      first blank line *or* the first indented sub-bullet, pinned by
+      `test_cut_release_notes.py` in the test job. Found in Ribbit, whose
+      v0.7.105 page had to be edited by hand; all four apps share the script.
+
 ## v0.1.39 — 2026-08-10
 
 - The menu-bar icon has two buttons now: left drops a panel with the settings
