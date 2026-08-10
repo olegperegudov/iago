@@ -6,6 +6,8 @@ Everything indented under them is for the next engineer and stays here.
 
 ## Unreleased
 
+## v0.1.41 — 2026-08-10
+
 - A release page is a list of what changed again, not a paragraph with the
   engineering notes glued onto the end of it.
     - The cutter dropped indented detail only when a blank line separated it, so
