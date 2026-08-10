@@ -6,6 +6,8 @@ Everything indented under them is for the next engineer and stays here.
 
 ## Unreleased
 
+## v0.1.39 — 2026-08-10
+
 - The menu-bar icon has two buttons now: left drops a panel with the settings
   and the cheat sheet, right opens a short menu.
 - ⌘E on a screenshot opens it in Preview to draw on, and every save there comes
