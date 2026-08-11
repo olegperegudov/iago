@@ -28,6 +28,10 @@ Both run in CI before anything is built.
 
 Every push to `main` is a release. CI bumps the patch version itself, tags it, builds Windows and both macOS architectures, and publishes the GitHub release plus the `latest.json` the in-app updater reads. Never bump by hand.
 
+The release is published as a **prerelease** and reaches nobody until it is promoted. Between the two, CI installs the build on real runners and demands it start: on Windows the NSIS installer runs silently, the installed `ProductVersion` must equal the tag and the process must still be alive 10s after launch; on macOS `codesign --verify --deep --strict`, the `Info.plist` version and the same 10-second launch (the Intel launch is skipped with a notice when the runner has no Rosetta). A tray app has no window to assert on — a living process is the smoke signal. Then `latest.json` is verified (all three platforms, version matches the tag, no universal macOS bundle) and only then does the `promote` job mark the release latest, which is what the updater follows.
+
+Any red gate leaves the build a prerelease and stable users keep the previous version. To move the channel by hand — after a bad release, or to ship a build whose canary flaked — use **Actions → Release control**: `promote` or `rollback` with the tag.
+
 Each release also carries version-less copies of the installers (`Iago_macOS_AppleSilicon.dmg`, `Iago_macOS_Intel.dmg`, `Iago_Windows_Setup.exe`) so the README buttons can link straight at a file that survives the next bump.
 
 ## Signing

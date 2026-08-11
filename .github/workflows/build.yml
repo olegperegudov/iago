@@ -135,7 +135,7 @@ jobs:
           releaseName: Iago ${{ needs.version.outputs.tag }}
           releaseBody: ${{ needs.version.outputs.notes || 'See the assets below to download and install.' }}
           releaseDraft: false
-          prerelease: false
+          prerelease: true
 
       # The build is reliable; the upload occasionally dies on a transient GitHub
       # API timeout. There is no native retry for a `uses:` step, so repeat it
@@ -153,7 +153,7 @@ jobs:
           releaseName: Iago ${{ needs.version.outputs.tag }}
           releaseBody: ${{ needs.version.outputs.notes || 'See the assets below to download and install.' }}
           releaseDraft: false
-          prerelease: false
+          prerelease: true
 
       # Re-upload the installer under a stable, version-less name so the README
       # download button can link straight at the file
@@ -169,6 +169,46 @@ jobs:
           exe=$(ls src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe | head -1)
           cp "$exe" Iago_Windows_Setup.exe
           gh release upload "$TAG" Iago_Windows_Setup.exe --clobber --repo "$GITHUB_REPOSITORY"
+
+
+      # Stage check on the real OS: install what we are about to ship, launch it,
+      # and demand it still be alive 10s later with the right version. A tray app
+      # has no window to assert on — a living process IS the smoke signal.
+      - name: Smoke-test installed app
+        shell: pwsh
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          Start-Process -FilePath ".\Iago_Windows_Setup.exe" -ArgumentList "/S" -Wait
+
+          # Tauri NSIS (installMode currentUser) installs under %LOCALAPPDATA%\<ProductName>.
+          $installDir = Join-Path $env:LOCALAPPDATA "Iago"
+          $exe = Get-ChildItem (Join-Path $installDir "*.exe") -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notmatch "unins" } | Select-Object -First 1
+          if (-not $exe) { Write-Host "::error::installed binary not found under $installDir"; exit 1 }
+
+          $ver = $exe.VersionInfo.ProductVersion
+          if ("v$ver" -ne $env:TAG) {
+            Write-Host "::error::installed version '$ver' != tag '$env:TAG'"
+            exit 1
+          }
+
+          $proc = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 10
+          $appLog = Join-Path $env:APPDATA "iago\debug.log"
+          if (-not (Get-Process -Id $proc.Id -ErrorAction SilentlyContinue)) {
+            $code = try { $proc.ExitCode } catch { "unknown" }
+            Write-Host "::error::Iago exited within 10s of launch on a clean machine (exit code $code)"
+            if (Test-Path $appLog) { Write-Host "--- debug.log tail ---"; Get-Content $appLog -Tail 50 }
+            exit 1
+          }
+          Write-Host "Iago alive after 10s (PID $($proc.Id))"
+
+          Stop-Process -Id $proc.Id -Force
+          # Leave the runner clean; best-effort, runners are ephemeral.
+          $unins = Get-ChildItem (Join-Path $installDir "unins*.exe") -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($unins) { Start-Process -FilePath $unins.FullName -ArgumentList "/S" -Wait }
 
   build-macos:
     # Runs AFTER build-windows, not beside it: tauri-action publishes latest.json
@@ -263,7 +303,7 @@ jobs:
           releaseName: Iago ${{ needs.version.outputs.tag }}
           releaseBody: ${{ needs.version.outputs.notes || 'See the assets below to download and install.' }}
           releaseDraft: false
-          prerelease: false
+          prerelease: true
 
       - name: Build Tauri app (Apple Silicon, retry)
         if: steps.build_arm.outcome == 'failure'
@@ -279,7 +319,7 @@ jobs:
           releaseName: Iago ${{ needs.version.outputs.tag }}
           releaseBody: ${{ needs.version.outputs.notes || 'See the assets below to download and install.' }}
           releaseDraft: false
-          prerelease: false
+          prerelease: true
 
       - name: Build Tauri app (Intel)
         id: build_intel
@@ -296,7 +336,7 @@ jobs:
           releaseName: Iago ${{ needs.version.outputs.tag }}
           releaseBody: ${{ needs.version.outputs.notes || 'See the assets below to download and install.' }}
           releaseDraft: false
-          prerelease: false
+          prerelease: true
 
       - name: Build Tauri app (Intel, retry)
         if: steps.build_intel.outcome == 'failure'
@@ -312,7 +352,7 @@ jobs:
           releaseName: Iago ${{ needs.version.outputs.tag }}
           releaseBody: ${{ needs.version.outputs.notes || 'See the assets below to download and install.' }}
           releaseDraft: false
-          prerelease: false
+          prerelease: true
 
       # Stable, version-less copies for the README download buttons (both Macs).
       # Direct links: releases/latest/download/Iago_macOS_*.dmg.
@@ -328,6 +368,51 @@ jobs:
           cp "$intel" Iago_macOS_Intel.dmg
           gh release upload "$TAG" Iago_macOS_AppleSilicon.dmg Iago_macOS_Intel.dmg --clobber --repo "$GITHUB_REPOSITORY"
 
+      # Release smoke: the bundle the user is about to install must be signed,
+      # must claim the version we tagged, and must actually START on a clean
+      # machine. A mismatched Info.plist would have the updater offer the same
+      # version forever; a crash-at-launch build must never reach anyone.
+      - name: Smoke-test macOS bundles
+        shell: bash
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          for arch in aarch64-apple-darwin x86_64-apple-darwin; do
+            app=$(ls -d src-tauri/target/$arch/release/bundle/macos/*.app | head -1)
+            echo "== $app"
+            codesign --verify --deep --strict --verbose=2 "$app"
+            plist_ver=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Contents/Info.plist")
+            if [ "v$plist_ver" != "$TAG" ]; then
+              echo "::error::$app version $plist_ver != tag $TAG"
+              exit 1
+            fi
+
+            # The runner is Apple Silicon: the Intel build can only launch via
+            # Rosetta, and a runner without it is NOT evidence the build is
+            # broken — skip the launch, keep codesign and version.
+            native=$(uname -m)
+            if [ "$arch" = "x86_64-apple-darwin" ] && [ "$native" = "arm64" ] \
+               && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+              echo "::notice::Rosetta unavailable — skipping launch smoke for the Intel build (codesign + version OK)"
+              continue
+            fi
+            bin=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$app/Contents/Info.plist")
+            "$app/Contents/MacOS/$bin" & pid=$!
+            sleep 10
+            if kill -0 "$pid" 2>/dev/null; then
+              echo "Iago ($arch) alive after 10s (PID $pid)"
+              kill "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+            else
+              code=0; wait "$pid" || code=$?
+              echo "::error::Iago ($arch) exited within 10s of launch on a clean machine (exit code $code)"
+              log="$HOME/Library/Application Support/iago/debug.log"
+              [ -f "$log" ] && { echo "--- debug.log tail ---"; tail -50 "$log"; }
+              exit 1
+            fi
+          done
+
       # The in-app updater is only as good as latest.json. Fail loudly here rather
       # than ship a manifest that silently strands one platform on an old version.
       - name: Verify updater manifest
@@ -337,22 +422,27 @@ jobs:
           TAG: ${{ needs.version.outputs.tag }}
         run: |
           gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p latest.json --clobber
-          python3 - "$TAG" <<'PY'
-          import json, sys
-          tag = sys.argv[1]
-          want = {"windows-x86_64", "darwin-aarch64", "darwin-x86_64"}
-          m = json.load(open("latest.json"))
-          plats = m.get("platforms", {})
-          missing = want - set(plats)
-          if missing:
-              print(f"::error::latest.json missing platform keys: {sorted(missing)}")
-              sys.exit(1)
-          if f"v{m.get('version')}" != tag:
-              print(f"::error::latest.json version {m.get('version')!r} != tag {tag!r}")
-              sys.exit(1)
-          for key in ("darwin-aarch64", "darwin-x86_64"):
-              if "universal" in plats[key].get("url", "").lower():
-                  print(f"::error::{key} points at a universal bundle; macOS must ship per-arch")
-                  sys.exit(1)
-          print(f"latest.json OK: v{m['version']}, platforms {sorted(plats)}")
-          PY
+          python3 .github/scripts/verify_manifest.py latest.json "$TAG"
+
+  # The stable channel moves only after every gate above is green: unit tests,
+  # both platform builds, the install-and-launch stage checks inside them, and
+  # the manifest verification. That is what the prerelease window is for — a
+  # release nobody promotes is a release nobody receives. If a promoted build
+  # turns out bad, demote it by hand: Actions → Release control → rollback.
+  promote:
+    needs: [version, test, build-windows, build-macos]
+    if: needs.version.outputs.skipped != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Promote to stable
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --prerelease=false --latest=true
+          gh api "repos/$GITHUB_REPOSITORY/releases/latest" \
+            --jq '"stable channel now serves \(.tag_name)"'

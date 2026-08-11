@@ -6,6 +6,17 @@ Everything indented under them is for the next engineer and stays here.
 
 ## Unreleased
 
+- An update is now offered only after that exact build has been installed and
+  started on a clean machine.
+    - Every push-built release is published as a prerelease and promoted to
+      latest only once each gate is green: unit tests, both platform builds,
+      the install-and-launch stage checks on Windows and macOS runners, and the
+      manifest verification. A red gate leaves the build unpromoted, so the
+      stable endpoint keeps serving the previous release. Rollback is a manual
+      button: Actions → Release control → `rollback` with the last good tag.
+      The manifest check moved out of the workflow into
+      `.github/scripts/verify_manifest.py`, since both workflows run it.
+
 ## v0.1.41 — 2026-08-10
 
 - A release page is a list of what changed again, not a paragraph with the
