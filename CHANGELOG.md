@@ -6,6 +6,8 @@ Everything indented under them is for the next engineer and stays here.
 
 ## Unreleased
 
+## v0.1.42 — 2026-08-11
+
 - An update is now offered only after that exact build has been installed and
   started on a clean machine.
     - Every push-built release is published as a prerelease and promoted to
