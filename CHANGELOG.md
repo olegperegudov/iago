@@ -6,6 +6,8 @@ Everything indented under them is for the next engineer and stays here.
 
 ## Unreleased
 
+## v0.1.43 — 2026-09-09
+
 - Fixed screenshots not being saved to history when the folder macOS was
   configured to save them into no longer existed on disk.
     - `screenshot_dir()` trusted `defaults read com.apple.screencapture
