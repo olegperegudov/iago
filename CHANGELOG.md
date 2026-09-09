@@ -6,6 +6,16 @@ Everything indented under them is for the next engineer and stays here.
 
 ## Unreleased
 
+- Fixed screenshots not being saved to history when the folder macOS was
+  configured to save them into no longer existed on disk.
+    - `screenshot_dir()` trusted `defaults read com.apple.screencapture
+      location` literally. If that folder is missing, macOS itself silently
+      saves the capture to the Desktop instead — but Iago kept trying to
+      watch the missing folder, the `notify` watcher failed to start, and the
+      screenshot watcher thread just ended with nothing watching at all.
+      `resolve_dir()` now mirrors macOS's own fallback: a configured folder
+      that isn't a real directory is treated as unset.
+
 ## v0.1.42 — 2026-08-11
 
 - An update is now offered only after that exact build has been installed and

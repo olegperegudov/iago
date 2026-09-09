@@ -20,16 +20,39 @@ const DEFAULT_DIR: &str = "Desktop";
 /// Reads the folder macOS saves screenshots into (Cmd+Shift+5 → Options).
 pub fn screenshot_dir() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
-    match read_pref("location") {
-        Some(loc) if !loc.is_empty() => {
-            let expanded = if let Some(rest) = loc.strip_prefix("~/") {
-                home.join(rest)
-            } else {
-                PathBuf::from(loc)
-            };
-            expanded
-        }
+    let loc = read_pref("location");
+    let expanded = expand(loc.clone(), &home);
+    let resolved = resolve_dir(loc, &home, |p| p.is_dir());
+    if resolved != expanded {
+        crate::debug_log::log(&format!(
+            "screenshot: configured location {} does not exist, falling back to {}",
+            expanded.display(),
+            resolved.display()
+        ));
+    }
+    resolved
+}
+
+fn expand(loc: Option<String>, home: &std::path::Path) -> PathBuf {
+    match loc {
+        Some(loc) if !loc.is_empty() => match loc.strip_prefix("~/") {
+            Some(rest) => home.join(rest),
+            None => PathBuf::from(loc),
+        },
         _ => home.join(DEFAULT_DIR),
+    }
+}
+
+/// macOS itself falls back to the Desktop when the configured location has
+/// gone missing (moved, deleted, an external drive that isn't mounted) — it
+/// never fails to save a screenshot over a stale pref. We mirror that: a
+/// configured folder that doesn't exist on disk is as good as unset.
+fn resolve_dir(loc: Option<String>, home: &std::path::Path, is_dir: impl Fn(&std::path::Path) -> bool) -> PathBuf {
+    let expanded = expand(loc, home);
+    if is_dir(&expanded) {
+        expanded
+    } else {
+        home.join(DEFAULT_DIR)
     }
 }
 
@@ -124,5 +147,36 @@ pub fn watch<F: Fn()>(history: Arc<Mutex<History>>, skip_next: Arc<Mutex<bool>>,
                 on_change();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_dir;
+    use std::path::PathBuf;
+
+    /// A stale `com.apple.screencapture location` pointing at a folder that no
+    /// longer exists must not leave the watcher pointed at nothing — macOS
+    /// itself saves to the Desktop in that case, and so must we.
+    #[test]
+    fn missing_configured_dir_falls_back_to_desktop() {
+        let home = PathBuf::from("/Users/oleg");
+        let resolved = resolve_dir(Some("/Users/oleg/Documents/screenshots".into()), &home, |_| false);
+        assert_eq!(resolved, home.join("Desktop"));
+    }
+
+    #[test]
+    fn existing_configured_dir_is_used_as_is() {
+        let home = PathBuf::from("/Users/oleg");
+        let configured = home.join("Pictures/Screenshots");
+        let resolved = resolve_dir(Some("~/Pictures/Screenshots".into()), &home, |p| p == configured);
+        assert_eq!(resolved, configured);
+    }
+
+    #[test]
+    fn unset_pref_defaults_to_desktop() {
+        let home = PathBuf::from("/Users/oleg");
+        let resolved = resolve_dir(None, &home, |_| true);
+        assert_eq!(resolved, home.join("Desktop"));
     }
 }
