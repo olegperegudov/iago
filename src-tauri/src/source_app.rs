@@ -131,7 +131,7 @@ fn icon_data_url(bundle: &str) -> String {
 }
 
 #[cfg(target_os = "macos")]
-unsafe fn nsstring_to_string(s: cocoa::base::id) -> String {
+pub(crate) unsafe fn nsstring_to_string(s: cocoa::base::id) -> String {
     use cocoa::base::nil;
     use cocoa::foundation::NSString;
     if s == nil {

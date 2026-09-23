@@ -17,6 +17,7 @@ mod private;
 mod settings;
 #[cfg(target_os = "macos")]
 mod screenshot;
+mod secure_input;
 mod source_app;
 mod tray;
 mod store;
@@ -32,9 +33,17 @@ use tauri_plugin_updater::UpdaterExt;
 /// Ribbit and Quill give, so the three apps behave alike.
 const TRAY_UPDATE_ICON: &[u8] = include_bytes!("../icons/tray-update.png");
 
-const HOTKEY: &str = "alt+v";
+/// ⌥V opens the popup. On macOS ⌃⌥V does too, and it is the one that always
+/// works: while some app holds secure keyboard entry the system drops hotkeys
+/// made of Option alone, and ⌃ is what gets a hotkey past that (see
+/// secure_input). Not on Windows, where Ctrl+Alt is AltGr — ⌃⌥V there would
+/// swallow a character people type.
+#[cfg(target_os = "macos")]
+const HOTKEYS: [&str; 2] = ["alt+v", "ctrl+alt+v"];
+#[cfg(not(target_os = "macos"))]
+const HOTKEYS: [&str; 1] = ["alt+v"];
 
-/// How often the hotkey is claimed again. macOS hands out Option+V once, at
+/// How often the hotkeys are claimed again. macOS hands out Option+V once, at
 /// registration, and can take it back without telling anyone: after four days of
 /// uptime the app sat in the tray with a working clipboard watcher and a dead
 /// hotkey, which is the only way in (2026-07-27). The loss is not readable from
@@ -305,31 +314,35 @@ fn persist(store: &store::Store, history: &Mutex<History>) {
     }
 }
 
-/// Claims Option+V for the popup. Run at startup and renewed on a timer, so the
+/// Claims the popup hotkeys. Run at startup and renewed on a timer, so the
 /// same call has to work on a hotkey that is already ours, one the system has
 /// quietly dropped, and one whose handler is stale.
-fn claim_hotkey(app: &AppHandle) -> Result<(), String> {
-    let hotkey: Shortcut = HOTKEY.parse().map_err(|e| format!("bad hotkey: {}", e))?;
-    // Let go of the previous claim first: registering on top of a live one is
-    // refused, and a claim the system no longer honours is exactly what we came
-    // to replace. Fails harmlessly when there is nothing to release.
-    let _ = app.global_shortcut().unregister(hotkey);
-    let handle = app.clone();
-    app.global_shortcut()
-        .on_shortcut(hotkey, move |_app, _sc, event| {
-            // Fire on press only — on_shortcut also reports the release, and
-            // acting on both toggles the popup up and straight back down.
-            if event.state == ShortcutState::Pressed {
-                toggle_popup(&handle);
-            }
-        })
-        .map_err(|e| e.to_string())
+fn claim_hotkeys(app: &AppHandle) -> Result<(), String> {
+    for key in HOTKEYS {
+        let hotkey: Shortcut = key.parse().map_err(|e| format!("bad hotkey {}: {}", key, e))?;
+        // Let go of the previous claim first: registering on top of a live one is
+        // refused, and a claim the system no longer honours is exactly what we came
+        // to replace. Fails harmlessly when there is nothing to release.
+        let _ = app.global_shortcut().unregister(hotkey);
+        let handle = app.clone();
+        app.global_shortcut()
+            .on_shortcut(hotkey, move |_app, _sc, event| {
+                // Fire on press only — on_shortcut also reports the release, and
+                // acting on both toggles the popup up and straight back down.
+                if event.state == ShortcutState::Pressed {
+                    toggle_popup(&handle, key);
+                }
+            })
+            .map_err(|e| format!("{}: {}", key, e))?;
+    }
+    Ok(())
 }
 
-/// Option+V: raise the popup, or put it away if it is already up.
-fn toggle_popup(app: &AppHandle) {
+/// The hotkey: raise the popup, or put it away if it is already up. `key` goes
+/// into the log, so it shows which of the two got through.
+fn toggle_popup(app: &AppHandle, key: &str) {
     if mac_window::popup_visible(app) {
-        debug_log::log("hotkey: popup down");
+        debug_log::log(&format!("hotkey {}: popup down", key));
         mac_window::hide_popup(app);
         // Same as Esc: whoever we took the keyboard from gets it back.
         if let Some(state) = app.try_state::<AppState>() {
@@ -343,7 +356,7 @@ fn toggle_popup(app: &AppHandle) {
     if let Some(state) = app.try_state::<AppState>() {
         if let Ok(mut pid) = state.target_pid.lock() {
             *pid = paste::frontmost_pid();
-            debug_log::log(&format!("hotkey: popup up, target pid = {:?}", *pid));
+            debug_log::log(&format!("hotkey {}: popup up, target pid = {:?}", key, *pid));
         }
     }
     if let Some(window) = app.get_webview_window("main") {
@@ -446,20 +459,24 @@ pub fn run() {
             // in the tray for weeks, and the claim does not always survive that
             // long. Only a failed renewal is worth a log line — the quiet case is
             // the app doing its job.
-            claim_hotkey(&handle)?;
+            claim_hotkeys(&handle)?;
             debug_log::log(&format!(
-                "hotkey registered: {} (renewed every {}s)",
-                HOTKEY, HOTKEY_RENEWAL_SECS
+                "hotkeys registered: {} (renewed every {}s)",
+                HOTKEYS.join(", "),
+                HOTKEY_RENEWAL_SECS
             ));
             let renewal_handle = handle.clone();
             tauri::async_runtime::spawn(async move {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(HOTKEY_RENEWAL_SECS)).await;
-                    if let Err(e) = claim_hotkey(&renewal_handle) {
+                    if let Err(e) = claim_hotkeys(&renewal_handle) {
                         debug_log::log(&format!("hotkey: renewal failed: {}", e));
                     }
                 }
             });
+
+            // Tells the tray who is blocking ⌥V, when someone is.
+            secure_input::watch(handle.clone());
 
             // Clipboard watcher.
             let watcher_handle = handle.clone();
@@ -649,5 +666,40 @@ mod window_tests {
                 label
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod hotkey_tests {
+    use super::HOTKEYS;
+    use tauri_plugin_global_shortcut::{Modifiers, Shortcut};
+
+    fn parsed() -> Vec<Shortcut> {
+        HOTKEYS.iter().map(|k| k.parse().unwrap_or_else(|e| panic!("{}: {:?}", k, e))).collect()
+    }
+
+    #[test]
+    fn option_v_is_the_first_hotkey_everywhere() {
+        assert_eq!(HOTKEYS[0], "alt+v");
+        assert_eq!(parsed()[0].mods, Modifiers::ALT);
+    }
+
+    /// Secure input drops hotkeys made of Option and Shift alone; one of ours
+    /// has to carry something else, or a stuck holder locks the user out.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn one_hotkey_survives_secure_input() {
+        assert!(parsed()
+            .iter()
+            .any(|s| s.mods.intersects(Modifiers::CONTROL | Modifiers::SUPER)));
+    }
+
+    /// Ctrl+Alt is AltGr on Windows: claiming it would eat typed characters.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn windows_claims_no_altgr_combination() {
+        assert!(parsed()
+            .iter()
+            .all(|s| !s.mods.contains(Modifiers::CONTROL | Modifiers::ALT)));
     }
 }

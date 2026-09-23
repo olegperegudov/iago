@@ -76,6 +76,10 @@ Stand on a picture and press `⌘E`. It opens in Preview with the markup tools �
 
 **Right-click it** for the short menu: the update, the version you are on, and quit.
 
+## When ⌥V does nothing
+
+Some app is holding *secure keyboard entry* — a terminal at a password prompt, a password field — and while it does, macOS swallows every shortcut made of `⌥` alone. Iago can't stop that, but it tells you: the parrot's menu and tooltip name the app that holds it. `⌃⌥V` opens the history anyway. To end it for good, switch secure keyboard entry off in that app.
+
 ## Updates
 
 The parrot turns green when a new version is out. Right-click it, pick the update line — done.

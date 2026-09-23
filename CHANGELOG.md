@@ -6,6 +6,16 @@ Everything indented under them is for the next engineer and stays here.
 
 ## Unreleased
 
+- ⌃⌥V now opens the history on a Mac even when ⌥V is blocked, and the menu-bar
+  icon names the app that is blocking it.
+    - While any app holds secure event input (Ghostty kept it for an hour after
+      a password prompt, 2026-09-23), macOS drops hotkeys made of Option alone,
+      and the app that registered one just looks dead. ⌃⌥V is claimed next to
+      ⌥V on macOS only — on Windows Ctrl+Alt is AltGr.
+    - `secure_input::watch` reads `kCGSSessionSecureInputPID` from the session
+      dictionary every 2 s; a change is a log line and updates the tray tooltip
+      plus a top menu line that exists only while someone holds it.
+
 ## v0.1.43 — 2026-09-09
 
 - Fixed screenshots not being saved to history when the folder macOS was

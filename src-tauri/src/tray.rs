@@ -9,9 +9,9 @@ use crate::debug_log;
 use std::sync::Mutex;
 use std::time::Instant;
 use tauri::{
-    menu::{MenuBuilder, MenuItem},
+    menu::{Menu, MenuBuilder, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager,
+    AppHandle, Manager, Wry,
 };
 
 /// The label of the panel window in tauri.conf.json.
@@ -34,6 +34,16 @@ const RELEASES_URL: &str = "https://github.com/olegperegudov/iago/releases";
 /// before this handler runs — without the guard the handler would then see a
 /// hidden panel and put it straight back up, and the icon would never close it.
 const AUTO_HIDE_GRACE_MS: u128 = 400;
+
+/// The line naming whoever holds secure input. It sits on top of the menu only
+/// while someone does — a line saying "all fine" would be noise.
+const SECURE_INPUT_ID: &str = "secure-input";
+
+struct SecureInputLine {
+    menu: Menu<Wry>,
+    item: MenuItem<Wry>,
+    separator: PredefinedMenuItem<Wry>,
+}
 
 static LAST_AUTO_HIDE: Mutex<Option<Instant>> = Mutex::new(None);
 
@@ -133,6 +143,35 @@ pub fn toggle_panel(app: &AppHandle, rect: tauri::Rect) {
     crate::mac_window::show_popover(app);
 }
 
+/// Puts the secure-input holder on the icon: in the tooltip and as the top line
+/// of the menu. `None` takes both back.
+pub fn show_secure_input(app: &AppHandle, holder: Option<&str>) {
+    let Some(line) = app.try_state::<SecureInputLine>() else { return };
+    let shown = line.menu.get(SECURE_INPUT_ID).is_some();
+    let tooltip = match holder {
+        Some(name) => {
+            let hint = crate::secure_input::blocked_hint(name);
+            let _ = line.item.set_text(&hint);
+            if !shown {
+                if let Err(e) = line.menu.insert_items(&[&line.item, &line.separator], 0) {
+                    debug_log::log(&format!("tray: secure input line not shown: {}", e));
+                }
+            }
+            hint
+        }
+        None => {
+            if shown {
+                let _ = line.menu.remove(&line.item);
+                let _ = line.menu.remove(&line.separator);
+            }
+            crate::secure_input::TOOLTIP.to_string()
+        }
+    };
+    if let Some(tray) = app.tray_by_id("main") {
+        let _ = tray.set_tooltip(Some(tooltip));
+    }
+}
+
 /// Update first, then the version, then quit. Settings and the cheat sheet are
 /// not here: the left click is their way in.
 pub fn build(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
@@ -157,9 +196,15 @@ pub fn build(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     // announce_update() rewrites this item's text when a release lands.
     app.manage(update.clone());
+    // Not in the menu yet: show_secure_input() puts it there when needed.
+    app.manage(SecureInputLine {
+        menu: menu.clone(),
+        item: MenuItem::with_id(app, SECURE_INPUT_ID, "", false, None::<&str>)?,
+        separator: PredefinedMenuItem::separator(app)?,
+    });
 
     let mut tray = TrayIconBuilder::with_id("main")
-        .tooltip("Iago — clipboard history (⌥V)")
+        .tooltip(crate::secure_input::TOOLTIP)
         .menu(&menu)
         // The menu belongs to the right button alone; the left one is handled
         // below, or the panel and the menu would fight over the same click.
