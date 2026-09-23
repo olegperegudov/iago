@@ -6,6 +6,8 @@ Everything indented under them is for the next engineer and stays here.
 
 ## Unreleased
 
+## v0.1.44 — 2026-09-23
+
 - ⌃⌥V now opens the history on a Mac even when ⌥V is blocked, and the menu-bar
   icon names the app that is blocking it.
     - While any app holds secure event input (Ghostty kept it for an hour after
