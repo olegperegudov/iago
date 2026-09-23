@@ -7,6 +7,8 @@
 //! mac_window.
 
 mod clipboard;
+#[cfg(target_os = "macos")]
+mod control;
 mod debug_log;
 mod edit;
 mod history;
@@ -431,6 +433,9 @@ pub fn run() {
                     ));
                 }
             }
+            // ⌥V by way of the keyboard driver, for when macOS mutes the hotkey.
+            #[cfg(target_os = "macos")]
+            control::listen(handle.clone(), &data_dir);
             app.manage(SettingsState { current: Arc::clone(&current), dir: data_dir });
             // delete_clip writes the index out on the spot, so the store has to be
             // reachable from a command, not just from the watcher threads.

@@ -4,9 +4,9 @@
 //! password prompt, a browser inside a password field. While it is on, the
 //! system swallows every hotkey made of Option alone, ⌥V included, and tells
 //! nobody: the app that registered it just looks dead. An app that forgets to
-//! let go keeps it that way for hours (Ghostty, 2026-09-23). ⌃⌥V still gets
-//! through (see `HOTKEYS` in lib.rs), and the tray names the holder, so the
-//! user knows both the way around and whom to blame.
+//! let go keeps it that way for hours (Ghostty, 2026-09-23). The ways around it
+//! are ⌃⌥V (see `HOTKEYS` in lib.rs) and a driver-level ⌥V (see control); the
+//! tray names the holder, so the user knows whom to blame.
 //!
 //! The holder's pid is published in the login session's dictionary — the same
 //! value `ioreg -l | grep SecureInput` shows — and is absent while nobody
@@ -24,7 +24,7 @@ pub const TOOLTIP: &str = "Iago — clipboard history (⌥V)";
 
 /// The tooltip and the top line of the tray menu while `holder` blocks ⌥V.
 pub fn blocked_hint(holder: &str) -> String {
-    format!("{} holds secure input: ⌥V is blocked, ⌃⌥V still works", holder)
+    format!("{} holds secure input: ⌥V may be blocked", holder)
 }
 
 /// Watches the holder for the life of the app and hands every change to the

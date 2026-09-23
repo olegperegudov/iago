@@ -6,6 +6,15 @@ Everything indented under them is for the next engineer and stays here.
 
 ## Unreleased
 
+- ⌥V can no longer be switched off by another app: with Karabiner-Elements and
+  the rule from the README it opens the history even while macOS mutes every
+  other ⌥ shortcut.
+    - A dead system password agent (`coreautha`) kept the secure-input hold
+      after it was killed (2026-09-23) — nothing at app level gets past that.
+      Karabiner reads the keyboard at the driver level, before the window
+      server, and its rule writes `toggle` to `control.sock` in the app data
+      dir (owner-only), which raises the popup.
+
 ## v0.1.44 — 2026-09-23
 
 - ⌃⌥V now opens the history on a Mac even when ⌥V is blocked, and the menu-bar

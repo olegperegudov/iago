@@ -78,7 +78,20 @@ Stand on a picture and press `⌘E`. It opens in Preview with the markup tools �
 
 ## When ⌥V does nothing
 
-Some app is holding *secure keyboard entry* — a terminal at a password prompt, a password field — and while it does, macOS swallows every shortcut made of `⌥` alone. Iago can't stop that, but it tells you: the parrot's menu and tooltip name the app that holds it. `⌃⌥V` opens the history anyway. To end it for good, switch secure keyboard entry off in that app.
+Some app is holding *secure keyboard entry* — a terminal at a password prompt, a password field, a system password sheet that got stuck — and while it does, macOS swallows every shortcut made of `⌥` alone. The parrot's menu and tooltip name the app that holds it, and `⌃⌥V` opens the history anyway.
+
+To make `⌥V` itself unbreakable, let [Karabiner-Elements](https://karabiner-elements.pqrs.org/) catch it: Karabiner reads the keyboard at the driver level, before macOS decides anything, and hands the press to Iago directly. Add this rule under *Complex Modifications*:
+
+```json
+{
+  "description": "⌥V opens Iago, even while secure input is on",
+  "manipulators": [{
+    "type": "basic",
+    "from": { "key_code": "v", "modifiers": { "mandatory": ["option"] } },
+    "to": [{ "shell_command": "printf toggle | /usr/bin/nc -U \"$HOME/Library/Application Support/com.iago.app/control.sock\"" }]
+  }]
+}
+```
 
 ## Updates
 
