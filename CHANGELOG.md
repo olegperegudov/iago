@@ -6,6 +6,8 @@ Everything indented under them is for the next engineer and stays here.
 
 ## Unreleased
 
+## v0.1.45 — 2026-09-23
+
 - ⌥V can no longer be switched off by another app: with Karabiner-Elements and
   the rule from the README it opens the history even while macOS mutes every
   other ⌥ shortcut.
