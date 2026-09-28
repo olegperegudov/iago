@@ -12,18 +12,24 @@ use std::sync::{Arc, Mutex};
 /// How often we ask the OS "did the clipboard change". Cheap: one integer read.
 const POLL_MS: u64 = 300;
 
+/// How long a change that came up empty keeps being re-read. An app that
+/// empties the clipboard first and fills it a moment later (WhatsApp, anything
+/// WebKit-based) bumps the counter on the emptying only, so the content that
+/// follows arrives with no change of its own for us to notice.
+const LATE_CONTENT_MS: u64 = 3000;
+
 pub struct Watcher {
     history: Arc<Mutex<History>>,
     /// Set before we write to the clipboard ourselves (paste, screenshot copy).
     /// Without it our own write bounces back through this watcher and lands in
     /// the history a second time.
     pub skip_next: Arc<Mutex<bool>>,
-    last_change: u64,
+    changes: Changes,
 }
 
 impl Watcher {
     pub fn new(history: Arc<Mutex<History>>, skip_next: Arc<Mutex<bool>>) -> Self {
-        Watcher { history, skip_next, last_change: change_count(), }
+        Watcher { history, skip_next, changes: Changes::new(change_count()) }
     }
 
     /// Runs forever on its own thread; returns true from `tick` when the history
@@ -38,32 +44,40 @@ impl Watcher {
     }
 
     fn tick(&mut self) -> bool {
-        let cc = change_count();
-        if cc == self.last_change {
-            return false;
-        }
-        self.last_change = cc;
-
-        if let Ok(mut skip) = self.skip_next.lock() {
-            if *skip {
-                *skip = false;
-                crate::debug_log::log("clipboard: change swallowed (our own write)");
-                return false;
+        let now = std::time::Instant::now();
+        match self.changes.poll(change_count(), now) {
+            Poll::Idle => return false,
+            Poll::Fresh => {
+                if let Ok(mut skip) = self.skip_next.lock() {
+                    if *skip {
+                        *skip = false;
+                        crate::debug_log::log("clipboard: change swallowed (our own write)");
+                        return false;
+                    }
+                }
             }
+            Poll::Retry => {}
         }
 
         // A password manager marks what it puts on the clipboard as concealed.
         // Read it and we would file the user's password into a plaintext history
         // that outlives the 30 seconds the manager keeps it around for.
         if is_concealed() {
+            self.changes.settled();
             crate::debug_log::log("clipboard: concealed clip ignored (password manager)");
             return false;
         }
 
         let payload = match read_clipboard() {
             Some(p) => p,
-            None => return false,
+            None => {
+                if self.changes.came_up_empty(now) {
+                    crate::debug_log::log("clipboard: changed but nothing readable yet, re-reading");
+                }
+                return false;
+            }
         };
+        self.changes.settled();
         let app = source_app::frontmost();
         match &payload {
             Payload::Text(s) => crate::debug_log::log(&format!(
@@ -201,6 +215,108 @@ fn is_concealed() -> bool {
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn is_concealed() -> bool {
     false
+}
+
+/// What the watcher should do on a tick, given the OS counter.
+#[derive(Debug, PartialEq)]
+enum Poll {
+    /// Nothing new.
+    Idle,
+    /// The counter moved: a new clip.
+    Fresh,
+    /// The counter has not moved, but the last change came up empty and may
+    /// still be filling in.
+    Retry,
+}
+
+/// Remembers which change we have seen and whether it still owes us content.
+struct Changes {
+    last: u64,
+    retry_until: Option<std::time::Instant>,
+}
+
+impl Changes {
+    fn new(count: u64) -> Self {
+        Changes { last: count, retry_until: None }
+    }
+
+    fn poll(&mut self, count: u64, now: std::time::Instant) -> Poll {
+        if count != self.last {
+            self.last = count;
+            self.retry_until = None;
+            return Poll::Fresh;
+        }
+        match self.retry_until {
+            Some(until) if now < until => Poll::Retry,
+            Some(_) => {
+                self.retry_until = None;
+                Poll::Idle
+            }
+            None => Poll::Idle,
+        }
+    }
+
+    /// The change read as empty. Returns true the first time, so the log gets
+    /// one line per change rather than one per tick.
+    fn came_up_empty(&mut self, now: std::time::Instant) -> bool {
+        if self.retry_until.is_some() {
+            return false;
+        }
+        self.retry_until = Some(now + std::time::Duration::from_millis(LATE_CONTENT_MS));
+        true
+    }
+
+    /// The change has been dealt with — recorded or deliberately ignored.
+    fn settled(&mut self) {
+        self.retry_until = None;
+    }
+}
+
+#[cfg(test)]
+mod changes_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn content_that_arrives_after_the_counter_moved_is_still_read() {
+        // WhatsApp, 2026-09-28: the counter moves when the clipboard is emptied,
+        // the text lands a moment later without moving it again.
+        let t0 = Instant::now();
+        let mut c = Changes::new(1);
+        assert_eq!(c.poll(2, t0), Poll::Fresh);
+        assert!(c.came_up_empty(t0));
+        let later = t0 + Duration::from_millis(POLL_MS);
+        assert_eq!(c.poll(2, later), Poll::Retry, "the empty read must not use the change up");
+        c.settled();
+        assert_eq!(c.poll(2, later + Duration::from_millis(POLL_MS)), Poll::Idle);
+    }
+
+    #[test]
+    fn a_clipboard_that_stays_empty_is_given_up_on() {
+        let t0 = Instant::now();
+        let mut c = Changes::new(1);
+        c.poll(2, t0);
+        c.came_up_empty(t0);
+        assert!(!c.came_up_empty(t0 + Duration::from_millis(POLL_MS)), "one log line per change");
+        let past = t0 + Duration::from_millis(LATE_CONTENT_MS + 1);
+        assert_eq!(c.poll(2, past), Poll::Idle);
+        assert_eq!(c.poll(2, past + Duration::from_millis(POLL_MS)), Poll::Idle);
+    }
+
+    #[test]
+    fn a_new_change_during_the_wait_is_a_fresh_clip() {
+        let t0 = Instant::now();
+        let mut c = Changes::new(1);
+        c.poll(2, t0);
+        c.came_up_empty(t0);
+        assert_eq!(c.poll(3, t0 + Duration::from_millis(POLL_MS)), Poll::Fresh);
+    }
+
+    #[test]
+    fn an_unchanged_clipboard_is_left_alone() {
+        let mut c = Changes::new(5);
+        assert_eq!(c.poll(5, Instant::now()), Poll::Idle);
+    }
 }
 
 #[cfg(all(test, target_os = "macos"))]

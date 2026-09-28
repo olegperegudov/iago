@@ -6,6 +6,14 @@ Everything indented under them is for the next engineer and stays here.
 
 ## Unreleased
 
+- Text copied in WhatsApp now reaches the history.
+    - WhatsApp (and WebKit-based apps) empty the clipboard first and fill it a
+      moment later; macOS bumps `changeCount` on the emptying only. A tick that
+      landed in the gap read nothing, spent the change, and the text that
+      followed never moved the counter again (2026-09-28). An empty read now
+      keeps the change open and re-reads it for up to 3 s (`Changes` in
+      `clipboard.rs`). Repro: `swift src-tauri/tests/stage_late_clip.swift`.
+
 ## v0.1.45 — 2026-09-23
 
 - ⌥V can no longer be switched off by another app: with Karabiner-Elements and
