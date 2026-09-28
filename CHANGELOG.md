@@ -6,6 +6,8 @@ Everything indented under them is for the next engineer and stays here.
 
 ## Unreleased
 
+## v0.1.46 — 2026-09-28
+
 - Text copied in WhatsApp now reaches the history.
     - WhatsApp (and WebKit-based apps) empty the clipboard first and fill it a
       moment later; macOS bumps `changeCount` on the emptying only. A tick that
