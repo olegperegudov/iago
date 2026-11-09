@@ -11,7 +11,7 @@ The popup is a non-activating `NSPanel` — it takes the keyboard but never take
 ## Run it locally
 
 ```bash
-npm install
+npm ci
 npm run tauri dev
 ```
 

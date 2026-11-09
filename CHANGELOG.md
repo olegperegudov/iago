@@ -6,6 +6,8 @@ Everything indented under them is for the next engineer and stays here.
 
 ## Unreleased
 
+- Under the hood only: every part the app is built from is now locked to an exact, checked version, so a build can never pick up a newer one on its own.
+
 ## v0.1.46 — 2026-09-28
 
 - Text copied in WhatsApp now reaches the history.

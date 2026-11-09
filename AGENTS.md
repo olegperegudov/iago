@@ -9,7 +9,7 @@ behaviour, storage, signing, CI.
 
 Quick facts:
 
-- Run it: `npm install && npm run tauri dev`
+- Run it: `npm ci && npm run tauri dev`
 - Tests: `npm test` (vitest: search, filtering, highlighting, escaping) and
   `cargo test --lib` in `src-tauri/` (history, store, paste)
 - Clips are stored locally with `0600` permissions and expire on a schedule the
