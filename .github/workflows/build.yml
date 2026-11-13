@@ -244,7 +244,9 @@ jobs:
       - name: Rust unit tests
         working-directory: src-tauri
         shell: bash
-        run: "$HOME/.cargo/bin/cargo test --lib --locked"
+        # macos-26 ships rustup from Homebrew, so ~/.cargo/bin is empty; ask rustup
+        # for the cargo of the toolchain rust-toolchain.toml pins.
+        run: '"$(rustup which cargo)" test --lib --locked'
 
       # Iago pastes by posting a synthetic Cmd+V, which macOS only allows
       # with an Accessibility grant. That grant is anchored to the code signature:
