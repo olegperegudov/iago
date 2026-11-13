@@ -241,6 +241,13 @@ jobs:
           workspaces: src-tauri
       - run: npm ci
 
+      # macos-26 ships rustup from Homebrew. Its rustc/cargo proxies lazily
+      # install components, and parallel build scripts race on the download and
+      # fail. Put the pinned toolchain's own binaries first so no proxy runs.
+      - name: Use the pinned Rust binaries directly
+        shell: bash
+        run: echo "$(dirname "$(rustup which cargo)")" >> "$GITHUB_PATH"
+
       - name: Rust unit tests
         working-directory: src-tauri
         shell: bash
